@@ -1,6 +1,11 @@
 use rmap::args::get_config;
+use rmap::scanner::Scanner;
+use std::error::Error;
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let config = get_config();
-    println!("{:?}", config);
+    let scanner = Scanner::new(config);
+    scanner.exec().await?;
+    Ok(())
 }

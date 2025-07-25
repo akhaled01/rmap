@@ -1,0 +1,10 @@
+{
+  "host": "160.153.0.36",
+  "ports": {
+    "22": "Filtered",
+    "443": "Open",
+    "80": "Open",
+    "8080": "Open"
+  },
+  "protocol": "TCP"
+}

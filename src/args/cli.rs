@@ -34,25 +34,13 @@ pub struct Args {
     #[arg(long = "threads", default_value_t = num_cpus::get())]
     pub threads: usize,
 
-    /// Output results in JSON format
+    /// Output results in JSON format to a file
     #[arg(long = "json")]
-    pub json: bool,
-
-    /// Output file path (if omitted, prints to stdout)
-    #[arg(long = "output")]
-    pub output: Option<String>,
+    pub json: Option<String>,
 
     /// Path to Lua script for service detection
     #[arg(long = "lua-script")]
     pub lua_script: Option<String>,
-
-    /// Scan profile (e.g., fast, full, stealth)
-    #[arg(long = "scan-profile", default_value = "full")]
-    pub scan_profile: String,
-
-    /// Allow scanning of private/local IP ranges
-    #[arg(long = "allow-private")]
-    pub allow_private: bool,
 
     /// Enable verbose logging
     #[arg(short = 'v', long = "verbose")]

@@ -10,11 +10,8 @@ pub struct Config {
     pub udp: bool,
     pub timeout: u64,
     pub threads: u64,
-    pub json: bool,
-    pub output: Option<String>,
+    pub json: Option<String>,
     pub lua_script: Option<String>,
-    pub scan_profile: String,
-    pub allow_private: bool,
     pub verbose: bool,
 }
 
@@ -27,11 +24,8 @@ impl Default for Config {
             udp: false,
             timeout: 2000,
             threads: num_cpus::get() as u64,
-            json: false,
-            output: None,
+            json: None,
             lua_script: None,
-            scan_profile: "full".to_string(),
-            allow_private: false,
             verbose: false,
         }
     }

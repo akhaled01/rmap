@@ -4,11 +4,13 @@ use num_cpus;
 mod cli;
 mod config;
 
-pub fn get_config() -> config::Config {
+pub use config::Config;
+
+pub fn get_config() -> Config {
     let args = cli::Args::parse();
     
     let mut config = if let Some(config_path) = &args.config {
-        match config::Config::from_file(config_path) {
+        match Config::from_file(config_path) {
             Ok(config) => config,
             Err(e) => {
                 eprintln!("Error loading config file '{}': {}", config_path, e);
@@ -16,7 +18,7 @@ pub fn get_config() -> config::Config {
             }
         }
     } else {
-        config::Config::default()
+        Config::default()
     };
     
     if !args.target.is_empty() {
@@ -40,24 +42,12 @@ pub fn get_config() -> config::Config {
         config.threads = args.threads as u64;
     }
     
-    if args.json {
+    if args.json.is_some() {
         config.json = args.json;
-    }
-    
-    if args.output.is_some() {
-        config.output = args.output;
     }
     
     if args.lua_script.is_some() {
         config.lua_script = args.lua_script;
-    }
-    
-    if args.scan_profile != "full" {
-        config.scan_profile = args.scan_profile;
-    }
-    
-    if args.allow_private {
-        config.allow_private = args.allow_private;
     }
     
     if args.verbose {
