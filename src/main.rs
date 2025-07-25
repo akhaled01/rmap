@@ -1,3 +1,6 @@
+use rmap::args::get_config;
+
 fn main() {
-    println!("Hello, world!");
+    let config = get_config();
+    println!("{:?}", config);
 }

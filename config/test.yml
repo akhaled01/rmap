@@ -1,0 +1,12 @@
+target: 127.0.0.1
+ports: 1-1024
+tcp: true
+udp: false
+timeout: 2000
+threads: 10
+json: false
+output: null
+lua_script: null
+scan_profile: full
+allow_private: false
+verbose: false
