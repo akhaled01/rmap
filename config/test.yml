@@ -1,12 +1,9 @@
-target: 127.0.0.1
-ports: 1-1024
+target:
+  - reboot01.com
+ports: 22,80,443,8080
 tcp: true
 udp: false
 timeout: 2000
-threads: 10
-json: false
-output: null
+threads: 1
 lua_script: null
-scan_profile: full
-allow_private: false
-verbose: false
+verbose: true

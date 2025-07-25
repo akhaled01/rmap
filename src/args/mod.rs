@@ -25,6 +25,12 @@ pub fn get_config() -> Config {
         config.target = args.target;
     }
     
+    // Validate that we have at least one target
+    if config.target.is_empty() {
+        eprintln!("Error: No target specified. Provide target via --target argument or in config file.");
+        std::process::exit(1);
+    }
+    
     if args.ports != "1-1024" {
         config.ports = args.ports;
     }

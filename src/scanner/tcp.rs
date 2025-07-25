@@ -71,7 +71,7 @@ impl TCPScanner {
     }
 
     // Static version of syn_scan that doesn't require self
-    async fn syn_scan(target: &str, ports: &str, timeout: u64, threads: u64) -> Result<SynScanResult, Box<dyn Error + Send + Sync>> {
+    async fn syn_scan(target: &str, ports: &str, timeout: u64, semaphore: Arc<Semaphore>) -> Result<SynScanResult, Box<dyn Error + Send + Sync>> {
         let target_owned = target.to_string();
         let mut handles = vec![];
         
@@ -85,9 +85,6 @@ impl TCPScanner {
                 filtered_ports: Vec::new(),
             });
         }
-        
-        // Create semaphore to limit concurrent port scans per target
-        let semaphore = Arc::new(Semaphore::new(threads as usize));
         
         for port in port_list {
             let target_clone = target_owned.clone();
@@ -194,7 +191,7 @@ impl TCPScanner {
         let verbose = self.config.verbose;
 
         if verbose {
-            println!("Starting TCP scan with {} threads", threads);
+            println!("Starting TCP scan with {} thread{}", threads, if threads == 1 { "" } else { "s" });
             println!("Target(s): {:?}", target);
             println!("Ports: {}", ports);
             println!("Timeout: {}ms", timeout);
@@ -221,24 +218,20 @@ impl TCPScanner {
             println!("Resolved targets: {:?}", targets);
         }
 
-        // spawn processes to conduct syn scan with thread limiting
+        // spawn processes to conduct syn scan with global thread limiting
         let mut handles = vec![];
         
-        // Create semaphore to limit concurrent target scans
-        let target_semaphore = Arc::new(Semaphore::new(std::cmp::min(threads as usize, targets.len())));
+        // Create global semaphore to limit concurrent connections across all targets and ports
+        let global_semaphore = Arc::new(Semaphore::new(threads as usize));
         
         for target in &targets {
             let target_clone = target.clone();
             let ports_clone = ports.clone();
-            let sem_clone = target_semaphore.clone();
+            let sem_clone = global_semaphore.clone();
             
             let handle = tokio::spawn(async move {
-                // Acquire semaphore permit before scanning target
-                let _permit = sem_clone.acquire().await.unwrap();
-                
-                let result = Self::syn_scan(&target_clone, &ports_clone, timeout, threads).await;
+                let result = Self::syn_scan(&target_clone, &ports_clone, timeout, sem_clone).await;
                 (target_clone, result)
-                // Permit is automatically released when _permit is dropped
             });
             handles.push(handle);
         }

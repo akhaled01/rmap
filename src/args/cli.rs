@@ -11,7 +11,7 @@ pub struct Args {
     pub config: Option<String>,
 
     /// Target IP address, domain, or CIDR range
-    #[arg(short = 't', long = "target", required = true)]
+    #[arg(short = 't', long = "target")]
     pub target: Vec<String>,
 
     /// Ports or port ranges (e.g., 80,443,1-1024)
