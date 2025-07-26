@@ -1,5 +1,5 @@
 pub mod args;
-pub mod scanner;
+pub mod core;
 pub mod dns;
 pub mod utils;
 pub mod output;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use crate::scanner::PortState;
+use crate::core::PortState;
 
 pub struct OutputHandler;
 

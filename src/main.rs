@@ -1,5 +1,5 @@
 use rmap::args::get_config;
-use rmap::scanner::Scanner;
+use rmap::core::Scanner;
 use std::error::Error;
 
 #[tokio::main]

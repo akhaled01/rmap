@@ -1,6 +1,7 @@
 use crate::args::Config;
 use std::error::Error;
 
+mod probe;
 mod lua;
 mod tcp;
 mod udp;
