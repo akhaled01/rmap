@@ -2,7 +2,7 @@ use serde_yaml;
 use std::fs;
 use num_cpus;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct Config {
     pub target: Vec<String>,
     pub ports: String,
@@ -13,6 +13,9 @@ pub struct Config {
     pub json: Option<String>,
     pub lua_script: Option<String>,
     pub verbose: bool,
+    pub service_detection: bool,
+    pub probes_file: Option<String>,
+    pub service_timeout: u64,
 }
 
 impl Default for Config {
@@ -27,6 +30,9 @@ impl Default for Config {
             json: None,
             lua_script: None,
             verbose: false,
+            service_detection: false,
+            probes_file: None,
+            service_timeout: 5000,
         }
     }
 }

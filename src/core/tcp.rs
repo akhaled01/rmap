@@ -10,6 +10,8 @@ use crate::utils::valid_ip;
 use crate::output::OutputHandler;
 use std::io::ErrorKind;
 use serde::Serialize;
+use crate::core::probe::{Prober, ServiceInfo};
+use std::net::IpAddr;
 
 pub struct TCPScanner {
     /// The configuration for the current scan
@@ -29,12 +31,13 @@ pub enum PortState {
 pub struct PortResult {
     port: String,
     state: PortState,
+    service: Option<ServiceInfo>,
 }
 
 pub struct SynScanResult {
-    pub open_ports: Vec<String>,
-    pub closed_ports: Vec<String>,
-    pub filtered_ports: Vec<String>,
+    pub open_ports: Vec<PortResult>,
+    pub closed_ports: Vec<PortResult>,
+    pub filtered_ports: Vec<PortResult>,
 }
 
 impl TCPScanner {
@@ -71,7 +74,7 @@ impl TCPScanner {
     }
 
     // Static version of syn_scan that doesn't require self
-    async fn syn_scan(target: &str, ports: &str, timeout: u64, semaphore: Arc<Semaphore>) -> Result<SynScanResult, Box<dyn Error + Send + Sync>> {
+    async fn syn_scan(target: &str, ports: &str, timeout: u64, semaphore: Arc<Semaphore>, config: &Config) -> Result<SynScanResult, Box<dyn Error + Send + Sync>> {
         let target_owned = target.to_string();
         let mut handles = vec![];
         
@@ -86,10 +89,28 @@ impl TCPScanner {
             });
         }
         
+        // Initialize prober if service detection is enabled
+        let _prober = if config.service_detection {
+            let mut prober = Prober::new();
+            prober.set_timeout(config.service_timeout);
+            
+            // Load probes file - use specified file or default to nmap-probes.json
+            let probes_file = config.probes_file.as_deref().unwrap_or("assets/nmap-probes.json");
+            if let Err(e) = prober.load_probes(probes_file) {
+                eprintln!("Warning: Failed to load probes file '{}': {}", probes_file, e);
+            }
+            
+            Some(prober)
+        } else {
+            None
+        };
+        
         for port in port_list {
             let target_clone = target_owned.clone();
             let port_string = port.to_string();
             let sem_clone = semaphore.clone();
+            let config_clone = config.clone();
+            let prober_enabled = config.service_detection;
             
             let handle = tokio::spawn(async move {
                 // Acquire semaphore permit before scanning
@@ -101,10 +122,38 @@ impl TCPScanner {
                 ).await {
                     Ok(Ok(stream)) => {
                         // Successfully connected - port is open
+                        let mut service_info = None;
+                        
+                        // Perform service detection if enabled
+                        if prober_enabled {
+                            // Parse target IP for service detection
+                            if let Ok(ip_addr) = target_clone.parse::<IpAddr>() {
+                                // Create a new prober instance for this task
+                                let mut task_prober = Prober::new();
+                                task_prober.set_timeout(config_clone.service_timeout);
+                                
+                                // Load probes file - use specified file or default to nmap-probes.json
+                                let probes_file = config_clone.probes_file.as_deref().unwrap_or("assets/nmap-probes.json");
+                                let _ = task_prober.load_probes(probes_file);
+                                
+                                // Perform service detection
+                                match task_prober.probe_port(ip_addr, port).await {
+                                    Ok(probe_result) => {
+                                        service_info = probe_result.service;
+                                    }
+                                    Err(_) => {
+                                        // Service detection failed, continue without service info
+                                    }
+                                }
+                            }
+                        }
+                        
                         drop(stream); // Close the connection
+                        
                         Some(PortResult {
                             port: port_string,
                             state: PortState::Open,
+                            service: service_info,
                         })
                     },
                     Ok(Err(e)) => {
@@ -132,6 +181,7 @@ impl TCPScanner {
                         Some(PortResult {
                             port: port_string,
                             state,
+                            service: None,
                         })
                     },
                     Err(_) => {
@@ -139,6 +189,7 @@ impl TCPScanner {
                         Some(PortResult {
                             port: port_string,
                             state: PortState::Filtered,
+                            service: None,
                         })
                     }
                 }
@@ -154,9 +205,9 @@ impl TCPScanner {
         for handle in handles {
             if let Ok(Some(result)) = handle.await {
                 match result.state {
-                    PortState::Open => open_ports.push(result.port),
-                    PortState::Closed => closed_ports.push(result.port),
-                    PortState::Filtered => filtered_ports.push(result.port),
+                    PortState::Open => open_ports.push(result),
+                    PortState::Closed => closed_ports.push(result),
+                    PortState::Filtered => filtered_ports.push(result),
                 }
             }
         }
@@ -198,17 +249,32 @@ impl TCPScanner {
         }
 
         // resolve targets to IP, and validate them
+        // Keep track of original target names for display
+        let mut target_mapping: HashMap<String, String> = HashMap::new();
         let mut targets: Vec<String> = Vec::new();
-        for target in target {
-            if valid_ip(target) {
-                targets.push(target.to_string());
+        
+        for original_target in target {
+            if valid_ip(original_target) {
+                targets.push(original_target.to_string());
+                target_mapping.insert(original_target.to_string(), original_target.to_string());
             } else {
-                let ips_str = self.dns.resolve_to_ip(target).await?;
+                let ips_str = self.dns.resolve_to_ip(original_target).await?;
                 // DNS resolver returns comma-separated IPs, split them
-                for ip in ips_str.split(", ") {
-                    let ip = ip.trim();
+                let resolved_ips: Vec<&str> = ips_str.split(", ").collect();
+                
+                if resolved_ips.len() == 1 {
+                    // Single IP resolution - use original target name
+                    let ip = resolved_ips[0].trim();
                     if valid_ip(ip) {
                         targets.push(ip.to_string());
+                        target_mapping.insert(ip.to_string(), original_target.to_string());
+                    }
+                } else {
+                    // Multiple IP resolution - use first IP but track all for consolidation
+                    let first_ip = resolved_ips[0].trim();
+                    if valid_ip(first_ip) {
+                        targets.push(first_ip.to_string());
+                        target_mapping.insert(first_ip.to_string(), original_target.to_string());
                     }
                 }
             }
@@ -229,8 +295,9 @@ impl TCPScanner {
             let ports_clone = ports.clone();
             let sem_clone = global_semaphore.clone();
             
+            let config_clone = self.config.clone();
             let handle = tokio::spawn(async move {
-                let result = Self::syn_scan(&target_clone, &ports_clone, timeout, sem_clone).await;
+                let result = Self::syn_scan(&target_clone, &ports_clone, timeout, sem_clone, &config_clone).await;
                 (target_clone, result)
             });
             handles.push(handle);
@@ -246,18 +313,26 @@ impl TCPScanner {
                         // Convert scan results to HashMap format for OutputHandler
                         let mut ports_map = HashMap::new();
                         
+                        // Store service information for display
+                        let mut service_details = HashMap::new();
+                        
                         // Add all ports to the map based on their state
-                        for port in scan_result.open_ports {
-                            ports_map.insert(port, PortState::Open);
+                        for port_result in scan_result.open_ports {
+                            ports_map.insert(port_result.port.clone(), PortState::Open);
+                            
+                            // Store service information for later display
+                            if let Some(service) = port_result.service {
+                                service_details.insert(port_result.port.clone(), service);
+                            }
                         }
                         
                         if verbose {
                             // In verbose mode, show closed and filtered ports too
-                            for port in scan_result.closed_ports {
-                                ports_map.insert(port, PortState::Closed);
+                            for port_result in scan_result.closed_ports {
+                                ports_map.insert(port_result.port, PortState::Closed);
                             }
-                            for port in scan_result.filtered_ports {
-                                ports_map.insert(port, PortState::Filtered);
+                            for port_result in scan_result.filtered_ports {
+                                ports_map.insert(port_result.port, PortState::Filtered);
                             }
                         }
                         
@@ -270,9 +345,47 @@ impl TCPScanner {
                                     eprintln!("Error writing JSON output: {}", e);
                                 }
                             } else {
-                                // Normal table output
-                                println!("\nTarget: {}", target);
+                                // Normal table output - use original target name if available
+                                let display_target = target_mapping.get(&target).unwrap_or(&target);
+                                println!("\nTarget: {} ({})", display_target, target);
                                 output_handler.out_results(ports_map, "TCP".to_string());
+                                
+                                // Display service detection results if available
+                                if self.config.service_detection {
+                                    if !service_details.is_empty() {
+                                        println!("\nService Detection Results:");
+                                        println!("------------------------------------------------------------");
+                                    for (port, service) in &service_details {
+                                        println!("Port {}: {}", port, service.service);
+                                        
+                                        if let Some(version) = &service.version {
+                                            println!("  Version: {}", version);
+                                        }
+                                        if let Some(product) = &service.product {
+                                            println!("  Product: {}", product);
+                                        }
+                                        if let Some(extra_info) = &service.extra_info {
+                                            println!("  Extra Info: {}", extra_info);
+                                        }
+                                        if let Some(hostname) = &service.hostname {
+                                            println!("  Hostname: {}", hostname);
+                                        }
+                                        if let Some(os_info) = &service.os_info {
+                                            println!("  OS: {}", os_info);
+                                        }
+                                        if let Some(device_type) = &service.device_type {
+                                            println!("  Device Type: {}", device_type);
+                                        }
+                                        println!("");
+                                    }
+                                    } else {
+                                        println!("\nService Detection: No detailed service information found.");
+                                        println!("This may be due to:");
+                                        println!("- No probes file loaded (use --probes-file to specify)");
+                                        println!("- Services not responding to probes");
+                                        println!("- Firewall blocking probe attempts");
+                                    }
+                                }
                             }
                         } else {
                             if json_output.is_none() {

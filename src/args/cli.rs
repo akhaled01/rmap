@@ -42,6 +42,18 @@ pub struct Args {
     #[arg(long = "lua-script")]
     pub lua_script: Option<String>,
 
+    /// Enable service detection on open ports
+    #[arg(short = 's', long = "service-detection")]
+    pub service_detection: bool,
+
+    /// Path to nmap probes JSON file for service detection
+    #[arg(long = "probes-file")]
+    pub probes_file: Option<String>,
+
+    /// Timeout for service detection probes in milliseconds
+    #[arg(long = "service-timeout", default_value = "5000")]
+    pub service_timeout: u64,
+
     /// Enable verbose logging
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,

@@ -7,6 +7,8 @@ mod tcp;
 mod udp;
 
 pub use tcp::PortState;
+pub use probe::parser::parse_nmap_probes_json;
+pub use probe::{Prober, ServiceInfo, ProbeResult};
 
 pub struct Scanner {
     pub config: Config,

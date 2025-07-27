@@ -60,5 +60,17 @@ pub fn get_config() -> Config {
         config.verbose = args.verbose;
     }
     
+    if args.service_detection {
+        config.service_detection = args.service_detection;
+    }
+    
+    if args.probes_file.is_some() {
+        config.probes_file = args.probes_file;
+    }
+    
+    if args.service_timeout != 5000 {
+        config.service_timeout = args.service_timeout;
+    }
+    
     config
 }
