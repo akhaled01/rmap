@@ -11,6 +11,7 @@ use crate::output::OutputHandler;
 use std::io::ErrorKind;
 use serde::Serialize;
 use crate::core::probe::{Prober, ServiceInfo};
+use crate::core::lua::{LuaScriptRunner, ScriptResult};
 use std::net::IpAddr;
 
 pub struct TCPScanner {
@@ -317,12 +318,12 @@ impl TCPScanner {
                         let mut service_details = HashMap::new();
                         
                         // Add all ports to the map based on their state
-                        for port_result in scan_result.open_ports {
+                        for port_result in &scan_result.open_ports {
                             ports_map.insert(port_result.port.clone(), PortState::Open);
                             
                             // Store service information for later display
-                            if let Some(service) = port_result.service {
-                                service_details.insert(port_result.port.clone(), service);
+                            if let Some(service) = &port_result.service {
+                                service_details.insert(port_result.port.clone(), service.clone());
                             }
                         }
                         
@@ -386,6 +387,49 @@ impl TCPScanner {
                                         println!("- Firewall blocking probe attempts");
                                     }
                                 }
+                                
+                                // Execute Lua scripts if specified
+                                if let Some(lua_script) = &self.config.lua_script {
+                                    println!("\nExecuting Lua Script: {}", lua_script);
+                                    println!("------------------------------------------------------------");
+                                    
+                                    match LuaScriptRunner::new() {
+                                        Ok(script_runner) => {
+                                            // Get the original target name for display
+                                            let display_target = target_mapping.get(&target).unwrap_or(&target);
+                                            
+                                            // Execute script against the host
+                                            match script_runner.run_script(lua_script, display_target, None).await {
+                                                Ok(script_result) => {
+                                                    self.display_script_result(&script_result);
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Error executing script '{}': {}", lua_script, e);
+                                                }
+                                            }
+                                            
+                                            // Also execute scripts for each open port
+                                            for port_result in &scan_result.open_ports {
+                                                if let Ok(port_num) = port_result.port.parse::<u16>() {
+                                                    match script_runner.run_script(lua_script, display_target, Some(port_num)).await {
+                                                        Ok(script_result) => {
+                                                            if script_result.success && (!script_result.output.is_empty() || !script_result.data.is_empty()) {
+                                                                println!("\nPort {} Script Results:", port_num);
+                                                                self.display_script_result(&script_result);
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            eprintln!("Error executing script '{}' on port {}: {}", lua_script, port_num, e);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Error initializing Lua script runner: {}", e);
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             if json_output.is_none() {
@@ -401,5 +445,31 @@ impl TCPScanner {
         }
         
         Ok(())
+    }
+    
+    /// Display Lua script execution results
+    fn display_script_result(&self, result: &ScriptResult) {
+        if result.success {
+            if !result.output.is_empty() {
+                println!("Output: {}", result.output);
+            }
+            
+            if !result.data.is_empty() {
+                println!("Data:");
+                for (key, value) in &result.data {
+                    println!("  {}: {}", key, value);
+                }
+            }
+            
+            if result.output.is_empty() && result.data.is_empty() {
+                println!("Script executed successfully (no output)");
+            }
+        } else {
+            if let Some(error) = &result.error {
+                println!("Script failed: {}", error);
+            } else {
+                println!("Script failed (unknown error)");
+            }
+        }
     }
 }
