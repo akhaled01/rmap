@@ -43,7 +43,7 @@ pub struct Args {
     pub lua_script: Option<String>,
 
     /// Enable service detection on open ports
-    #[arg(short = 's', long = "service-detection")]
+    #[arg(short = 's', long = "service-detection", default_value = "false")]
     pub service_detection: bool,
 
     /// Path to nmap probes JSON file for service detection
