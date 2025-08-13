@@ -2,12 +2,10 @@ use crate::args::Config;
 use std::error::Error;
 
 mod lua;
-mod probe;
 mod tcp;
 mod udp;
 
 pub use lua::{LuaScriptRunner, ScriptResult, new_script_runner};
-pub use probe::{ProbeResult, Prober, ServiceInfo, parser::parse_nmap_probes_json};
 pub use tcp::PortState;
 
 pub struct Scanner {

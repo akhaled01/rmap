@@ -1,17 +1,12 @@
 use crate::{
     args::{Config, get_config},
-    core::{
-        lua::LuaScriptRunner,
-        probe::{Prober, ServiceInfo},
-    },
+    core::lua::LuaScriptRunner,
     dns::DNSResolver,
     output::OutputHandler,
     utils::valid_ip,
 };
 use serde::Serialize;
-use std::{
-    collections::HashMap, error::Error, io::ErrorKind, net::IpAddr, sync::Arc, time::Duration,
-};
+use std::{collections::HashMap, error::Error, io::ErrorKind, sync::Arc, time::Duration};
 use tokio::{net::TcpStream, sync::Semaphore};
 
 pub struct TCPScanner {
@@ -32,7 +27,6 @@ pub enum PortState {
 pub struct PortResult {
     port: String,
     state: PortState,
-    service: Option<ServiceInfo>,
 }
 
 pub struct SynScanResult {
@@ -85,7 +79,7 @@ impl TCPScanner {
         ports: &str,
         timeout: u64,
         semaphore: Arc<Semaphore>,
-        config: &Config,
+        _config: &Config,
     ) -> Result<SynScanResult, Box<dyn Error + Send + Sync>> {
         let target_owned = target.to_string();
         let mut handles = vec![];
@@ -101,35 +95,10 @@ impl TCPScanner {
             });
         }
 
-        // Initialize prober if service detection is enabled
-        let _prober = if config.service_detection {
-            let mut prober = Prober::new();
-            prober.set_timeout(config.service_timeout);
-
-            // Load probes file - use specified file or default to nmap-probes.json
-            let probes_file = config
-                .probes_file
-                .as_deref()
-                .unwrap_or("assets/nmap-probes.json");
-            if let Err(e) = prober.load_probes(probes_file) {
-                eprintln!(
-                    "Warning: Failed to load probes file '{}': {}",
-                    probes_file, e
-                );
-            }
-
-            Some(prober)
-        } else {
-            None
-        };
-
         for port in port_list {
             let target_clone = target_owned.clone();
             let port_string = port.to_string();
             let sem_clone = semaphore.clone();
-            let config_clone = config.clone();
-            let prober_enabled = config.service_detection;
-
             let handle = tokio::spawn(async move {
                 // Acquire semaphore permit before scanning
                 let _permit = sem_clone.acquire().await.unwrap();
@@ -142,41 +111,11 @@ impl TCPScanner {
                 {
                     Ok(Ok(stream)) => {
                         // Successfully connected - port is open
-                        let mut service_info = None;
-
-                        // Perform service detection if enabled
-                        if prober_enabled {
-                            // Parse target IP for service detection
-                            if let Ok(ip_addr) = target_clone.parse::<IpAddr>() {
-                                // Create a new prober instance for this task
-                                let mut task_prober = Prober::new();
-                                task_prober.set_timeout(config_clone.service_timeout);
-
-                                // Load probes file - use specified file or default to nmap-probes.json
-                                let probes_file = config_clone
-                                    .probes_file
-                                    .as_deref()
-                                    .unwrap_or("assets/nmap-probes.json");
-                                let _ = task_prober.load_probes(probes_file);
-
-                                // Perform service detection
-                                match task_prober.probe_port(ip_addr, port).await {
-                                    Ok(probe_result) => {
-                                        service_info = probe_result.service;
-                                    }
-                                    Err(_) => {
-                                        // Service detection failed, continue without service info
-                                    }
-                                }
-                            }
-                        }
-
                         drop(stream); // Close the connection
 
                         Some(PortResult {
                             port: port_string,
                             state: PortState::Open,
-                            service: service_info,
                         })
                     }
                     Ok(Err(e)) => {
@@ -205,7 +144,6 @@ impl TCPScanner {
                         Some(PortResult {
                             port: port_string,
                             state,
-                            service: None,
                         })
                     }
                     Err(_) => {
@@ -213,7 +151,6 @@ impl TCPScanner {
                         Some(PortResult {
                             port: port_string,
                             state: PortState::Filtered,
-                            service: None,
                         })
                     }
                 }
@@ -337,12 +274,10 @@ impl TCPScanner {
         for handle in handles {
             if let Ok((target, result)) = handle.await {
                 match result {
+                    // if scan is ok, output and run scripts
                     Ok(scan_result) => {
                         // Convert scan results to HashMap format for OutputHandler
                         let mut ports_map = HashMap::new();
-
-                        // Store service information for display
-                        let mut service_details = HashMap::new();
 
                         // Process all port results in a single unified approach
                         let all_ports = scan_result
@@ -353,11 +288,6 @@ impl TCPScanner {
 
                         for port_result in all_ports {
                             ports_map.insert(port_result.port.clone(), port_result.state.clone());
-
-                            // Store service information for open ports
-                            if let Some(service) = &port_result.service {
-                                service_details.insert(port_result.port.clone(), service.clone());
-                            }
                         }
 
                         // Display results using OutputHandler
@@ -376,96 +306,23 @@ impl TCPScanner {
                             } else {
                                 // Normal table output - use original target name if available
                                 output_handler.out_results(ports_map, "TCP".to_string());
-
-                                // Display service detection results if available
-                                if self.config.service_detection {
-                                    output_handler.out_service_detection(&service_details);
-                                }
-
-                                // Execute Lua scripts if specified
-                                if let Some(lua_script) = &self.config.lua_script {
-                                    println!("\nExecuting Lua Script: {}", lua_script);
-                                    println!(
-                                        "------------------------------------------------------------"
-                                    );
-
-                                    match LuaScriptRunner::new() {
-                                        Ok(script_runner) => {
-                                            // Get the original target name for display
-                                            let display_target =
-                                                target_mapping.get(&target).unwrap_or(&target);
-
-                                            // Execute script against the host
-                                            match script_runner
-                                                .run_script(lua_script, display_target, None)
-                                                .await
-                                            {
-                                                Ok(script_result) => {
-                                                    output_handler
-                                                        .out_script_result(&script_result);
-                                                }
-                                                Err(e) => {
-                                                    eprintln!(
-                                                        "Error executing script '{}': {}",
-                                                        lua_script, e
-                                                    );
-                                                }
-                                            }
-
-                                            // Also execute scripts for each open port
-                                            for port_result in &scan_result.open_ports {
-                                                if let Ok(port_num) =
-                                                    port_result.port.parse::<u16>()
-                                                {
-                                                    match script_runner
-                                                        .run_script(
-                                                            lua_script,
-                                                            display_target,
-                                                            Some(port_num),
-                                                        )
-                                                        .await
-                                                    {
-                                                        Ok(script_result) => {
-                                                            if script_result.success
-                                                                && (!script_result
-                                                                    .output
-                                                                    .is_empty()
-                                                                    || !script_result
-                                                                        .data
-                                                                        .is_empty())
-                                                            {
-                                                                println!(
-                                                                    "\nPort {} Script Results:",
-                                                                    port_num
-                                                                );
-                                                                output_handler.out_script_result(
-                                                                    &script_result,
-                                                                );
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            eprintln!(
-                                                                "Error executing script '{}' on port {}: {}",
-                                                                lua_script, port_num, e
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!(
-                                                "Error initializing Lua script runner: {}",
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
                             }
                         } else {
                             if json_output.is_none() {
                                 println!("\nTarget {}: No ports to display", target);
                             }
+                        }
+
+                        // Execute Lua scripts if specified
+                        if let Some(lua_script) = &self.config.lua_script {
+                            let display_target = target_mapping.get(&target).unwrap_or(&target);
+                            self.execute_lua_scripts(
+                                lua_script,
+                                display_target,
+                                &scan_result,
+                                &output_handler,
+                            )
+                            .await;
                         }
                     }
                     Err(e) => {
@@ -476,5 +333,63 @@ impl TCPScanner {
         }
 
         Ok(())
+    }
+
+    /// Execute Lua scripts against a target and its open ports
+    async fn execute_lua_scripts(
+        &self,
+        lua_script: &str,
+        display_target: &str,
+        scan_result: &SynScanResult,
+        output_handler: &OutputHandler,
+    ) {
+        println!("\nExecuting Lua Script: {}", lua_script);
+        println!("------------------------------------------------------------");
+
+        match LuaScriptRunner::new() {
+            Ok(script_runner) => {
+                // Execute script against the host
+                match script_runner
+                    .run_script(lua_script, display_target, None)
+                    .await
+                {
+                    Ok(script_result) => {
+                        output_handler.out_script_result(&script_result);
+                    }
+                    Err(e) => {
+                        eprintln!("Error executing script '{}': {}", lua_script, e);
+                    }
+                }
+
+                // Also execute scripts for each open port
+                for port_result in &scan_result.open_ports {
+                    if let Ok(port_num) = port_result.port.parse::<u16>() {
+                        match script_runner
+                            .run_script(lua_script, display_target, Some(port_num))
+                            .await
+                        {
+                            Ok(script_result) => {
+                                if script_result.success
+                                    && (!script_result.output.is_empty()
+                                        || !script_result.data.is_empty())
+                                {
+                                    println!("\nPort {} Script Results:", port_num);
+                                    output_handler.out_script_result(&script_result);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "Error executing script '{}' on port {}: {}",
+                                    lua_script, port_num, e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error initializing Lua script runner: {}", e);
+            }
+        }
     }
 }

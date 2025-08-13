@@ -1,4 +1,4 @@
-use crate::core::{PortState, ScriptResult, ServiceInfo};
+use crate::core::{PortState, ScriptResult};
 use std::{collections::HashMap, fs::File, io::Write};
 use tabled::{Table, Tabled};
 
@@ -149,42 +149,6 @@ impl OutputHandler {
 
         println!("JSON output written to: {}", file_path);
         Ok(())
-    }
-
-    pub fn out_service_detection(&self, service_details: &HashMap<String, ServiceInfo>) {
-        if !service_details.is_empty() {
-            println!("\nService Detection Results:");
-            println!("------------------------------------------------------------");
-            for (port, service) in service_details {
-                println!("Port {}: {}", port, service.service);
-
-                if let Some(version) = &service.version {
-                    println!("  Version: {}", version);
-                }
-                if let Some(product) = &service.product {
-                    println!("  Product: {}", product);
-                }
-                if let Some(extra_info) = &service.extra_info {
-                    println!("  Extra Info: {}", extra_info);
-                }
-                if let Some(hostname) = &service.hostname {
-                    println!("  Hostname: {}", hostname);
-                }
-                if let Some(os_info) = &service.os_info {
-                    println!("  OS: {}", os_info);
-                }
-                if let Some(device_type) = &service.device_type {
-                    println!("  Device Type: {}", device_type);
-                }
-                println!("");
-            }
-        } else {
-            println!("\nService Detection: No detailed service information found.");
-            println!("This may be due to:");
-            println!("- No probes file loaded (use --probes-file to specify)");
-            println!("- Services not responding to probes");
-            println!("- Firewall blocking probe attempts");
-        }
     }
 
     pub fn out_script_result(&self, result: &ScriptResult) {
