@@ -1,6 +1,8 @@
-use rmap::args::get_config;
-use rmap::utils::ensure_probe;
-use rmap::core::Scanner;
+use rmap::{
+    args::get_config,
+    utils::ensure_probe,
+    core::Scanner,
+};
 use std::error::Error;
 
 #[tokio::main]

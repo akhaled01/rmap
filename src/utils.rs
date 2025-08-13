@@ -1,6 +1,6 @@
 use std::net::IpAddr;
-use crate::core::parse_nmap_probes_json;
 use std::error::Error;
+use crate::core::parse_nmap_probes_json;
 
 pub fn valid_ip(ip: &str) -> bool {
     ip.parse::<IpAddr>().is_ok()

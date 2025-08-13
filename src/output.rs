@@ -1,7 +1,16 @@
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use crate::core::PortState;
+use crate::core::{PortState, ScriptResult, ServiceInfo};
+use std::{collections::HashMap, fs::File, io::Write};
+use tabled::{Table, Tabled};
+
+#[derive(Tabled)]
+struct PortRow {
+    #[tabled(rename = "PORT")]
+    port: String,
+    #[tabled(rename = "STATE")]
+    state: String,
+    #[tabled(rename = "SERVICE")]
+    service: String,
+}
 
 pub struct OutputHandler;
 
@@ -59,7 +68,7 @@ impl OutputHandler {
             "8082" => "sonatype",
             "9999" => "abyss",
             "10000" => "webmin",
-            _ => "unknown"
+            _ => "unknown",
         }
     }
 
@@ -69,12 +78,6 @@ impl OutputHandler {
             return;
         }
 
-        // Print table header
-        println!("\n{} Scan Results:", protocol.to_uppercase());
-        println!("{:-<60}", "");
-        println!("{:<10} {:<12} {:<20}", "PORT", "STATE", "SERVICE");
-        println!("{:-<60}", "");
-
         // Sort ports numerically for better display
         let mut sorted_ports: Vec<_> = ports.iter().collect();
         sorted_ports.sort_by(|a, b| {
@@ -83,40 +86,129 @@ impl OutputHandler {
             port_a.cmp(&port_b)
         });
 
-        // Print each port result
-        for (port, state) in sorted_ports {
-            let state_str = match state {
-                PortState::Open => "open",
-                PortState::Closed => "closed",
-                PortState::Filtered => "filtered",
-            };
-            
-            let service = Self::get_service_for_port(port);
-            println!("{:<10} {:<12} {:<20}", port, state_str, service);
-        }
-        
-        println!("{:-<60}", "");
-        
+        // Create table rows
+        let rows: Vec<PortRow> = sorted_ports
+            .iter()
+            .map(|(port, state)| {
+                let state_str = match state {
+                    PortState::Open => "open",
+                    PortState::Closed => "closed",
+                    PortState::Filtered => "filtered",
+                };
+
+                let service = Self::get_service_for_port(port);
+
+                PortRow {
+                    port: port.to_string(),
+                    state: state_str.to_string(),
+                    service: service.to_string(),
+                }
+            })
+            .collect();
+
+        // Create and display table
+        println!("\n{} Scan Results:", protocol.to_uppercase());
+        let table = Table::new(rows);
+        println!("{}", table);
+
         // Print summary
-        let open_count = ports.values().filter(|&s| matches!(s, PortState::Open)).count();
-        let closed_count = ports.values().filter(|&s| matches!(s, PortState::Closed)).count();
-        let filtered_count = ports.values().filter(|&s| matches!(s, PortState::Filtered)).count();
-        
-        println!("Summary: {} open, {} closed, {} filtered", open_count, closed_count, filtered_count);
+        let open_count = ports
+            .values()
+            .filter(|&s| matches!(s, PortState::Open))
+            .count();
+        let closed_count = ports
+            .values()
+            .filter(|&s| matches!(s, PortState::Closed))
+            .count();
+        let filtered_count = ports
+            .values()
+            .filter(|&s| matches!(s, PortState::Filtered))
+            .count();
+
+        println!(
+            "Summary: {} open, {} closed, {} filtered",
+            open_count, closed_count, filtered_count
+        );
     }
 
-    pub fn out_json(&self, ports: HashMap<String, PortState>, protocol: String, file_path: &str, host: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn out_json(
+        &self,
+        ports: HashMap<String, PortState>,
+        protocol: String,
+        file_path: &str,
+        host: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::json!({
             "protocol": protocol,
             "ports": ports,
             "host": host
         });
-        
+
         let mut file = File::create(file_path)?;
         writeln!(file, "{}", serde_json::to_string_pretty(&json)?)?;
-        
+
         println!("JSON output written to: {}", file_path);
         Ok(())
     }
+
+    pub fn out_service_detection(&self, service_details: &HashMap<String, ServiceInfo>) {
+        if !service_details.is_empty() {
+            println!("\nService Detection Results:");
+            println!("------------------------------------------------------------");
+            for (port, service) in service_details {
+                println!("Port {}: {}", port, service.service);
+
+                if let Some(version) = &service.version {
+                    println!("  Version: {}", version);
+                }
+                if let Some(product) = &service.product {
+                    println!("  Product: {}", product);
+                }
+                if let Some(extra_info) = &service.extra_info {
+                    println!("  Extra Info: {}", extra_info);
+                }
+                if let Some(hostname) = &service.hostname {
+                    println!("  Hostname: {}", hostname);
+                }
+                if let Some(os_info) = &service.os_info {
+                    println!("  OS: {}", os_info);
+                }
+                if let Some(device_type) = &service.device_type {
+                    println!("  Device Type: {}", device_type);
+                }
+                println!("");
+            }
+        } else {
+            println!("\nService Detection: No detailed service information found.");
+            println!("This may be due to:");
+            println!("- No probes file loaded (use --probes-file to specify)");
+            println!("- Services not responding to probes");
+            println!("- Firewall blocking probe attempts");
+        }
+    }
+
+    pub fn out_script_result(&self, result: &ScriptResult) {
+        if result.success {
+            if !result.output.is_empty() {
+                println!("Output: {}", result.output);
+            }
+
+            if !result.data.is_empty() {
+                println!("Data:");
+                for (key, value) in &result.data {
+                    println!("  {}: {}", key, value);
+                }
+            }
+
+            if result.output.is_empty() && result.data.is_empty() {
+                println!("Script executed successfully (no output)");
+            }
+        } else {
+            if let Some(error) = &result.error {
+                println!("Script failed: {}", error);
+            } else {
+                println!("Script failed (unknown error)");
+            }
+        }
+    }
 }
-    
