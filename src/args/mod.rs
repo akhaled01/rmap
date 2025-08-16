@@ -33,8 +33,9 @@ pub fn get_config() -> Config {
         std::process::exit(1);
     }
 
-    if args.ports != "1-1024" {
-        config.ports = args.ports;
+    if let Some(ports) = args.ports {
+        config.ports = ports;
+        config.ports_explicitly_specified = true;
     }
 
     if args.tcp != true || args.udp {

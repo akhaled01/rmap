@@ -73,6 +73,15 @@ impl OutputHandler {
     }
 
     pub fn out_results(&self, ports: HashMap<String, PortState>, protocol: String) {
+        self.out_results_with_ports_info(ports, protocol, false);
+    }
+
+    pub fn out_results_with_ports_info(
+        &self,
+        ports: HashMap<String, PortState>,
+        protocol: String,
+        ports_specified: bool,
+    ) {
         if ports.is_empty() {
             println!("No ports found for {} scan", protocol.to_uppercase());
             return;
@@ -86,12 +95,21 @@ impl OutputHandler {
             port_a.cmp(&port_b)
         });
 
-        // Create table rows
+        // Create table rows - show all ports if explicitly specified, otherwise only open/filtered
         let rows: Vec<PortRow> = sorted_ports
             .iter()
+            .filter(|(_, state)| {
+                matches!(state, PortState::Open)
+            })
             .map(|(port, state)| {
                 let state_str = match state {
-                    PortState::Open => "open",
+                    PortState::Open => {
+                        if protocol.to_uppercase() == "UDP" {
+                            "open|filtered"
+                        } else {
+                            "open"
+                        }
+                    }
                     PortState::Closed => "closed",
                     PortState::Filtered => "filtered",
                 };
@@ -99,7 +117,7 @@ impl OutputHandler {
                 let service = Self::get_service_for_port(port);
 
                 PortRow {
-                    port: port.to_string(),
+                    port: format!("{}/{}", port, protocol.to_lowercase()),
                     state: state_str.to_string(),
                     service: service.to_string(),
                 }

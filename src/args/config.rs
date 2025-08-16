@@ -6,6 +6,8 @@ use std::fs;
 pub struct Config {
     pub target: Vec<String>,
     pub ports: String,
+    #[serde(skip)]
+    pub ports_explicitly_specified: bool,
     pub tcp: bool,
     pub udp: bool,
     pub timeout: u64,
@@ -20,6 +22,7 @@ impl Default for Config {
         Config {
             target: vec![],
             ports: "1-1024".to_string(),
+            ports_explicitly_specified: false,
             tcp: true,
             udp: false,
             timeout: 2000,

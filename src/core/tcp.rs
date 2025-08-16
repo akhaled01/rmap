@@ -1,13 +1,17 @@
-use crate::{
-    args::{Config, get_config},
-    core::lua::LuaScriptRunner,
-    dns::DNSResolver,
-    output::OutputHandler,
-    utils::valid_ip,
-};
+use crate::args::{Config, get_config};
+use crate::core::lua::LuaScriptRunner;
+use crate::output::OutputHandler;
+use crate::utils::valid_ip;
+use crate::dns::DNSResolver;
+use std::collections::HashMap;
+use std::error::Error;
+use std::io::ErrorKind;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::sync::Semaphore;
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
-use std::{collections::HashMap, error::Error, io::ErrorKind, sync::Arc, time::Duration};
-use tokio::{net::TcpStream, sync::Semaphore};
 
 pub struct TCPScanner {
     /// The configuration for the current scan
@@ -25,8 +29,16 @@ pub enum PortState {
 
 #[derive(Debug)]
 pub struct PortResult {
-    port: String,
-    state: PortState,
+    pub port: String,
+    pub state: PortState,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServiceInfo {
+    pub name: String,
+    pub version: Option<String>,
+    pub product: Option<String>,
+    pub extra_info: Option<String>,
 }
 
 pub struct SynScanResult {
@@ -94,6 +106,18 @@ impl TCPScanner {
                 filtered_ports: Vec::new(),
             });
         }
+
+        // Print scan message
+        println!("\x1b[31mrunning TCP scan\x1b[0m");
+        
+        // Create progress bar
+        let pb = ProgressBar::new(port_list.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{percent:>3}%|{bar:25.red/bright_red}| {pos}/{len} [{elapsed_precise}<{eta_precise}, {per_sec}]")
+                .unwrap()
+                .progress_chars("█▉▊▋▌▍▎▏ "),
+        );
 
         for port in port_list {
             let target_clone = target_owned.clone();
@@ -171,7 +195,10 @@ impl TCPScanner {
                     PortState::Filtered => filtered_ports.push(result),
                 }
             }
+            pb.inc(1);
         }
+
+        pb.finish_and_clear();
 
         Ok(SynScanResult {
             open_ports,
@@ -305,7 +332,8 @@ impl TCPScanner {
                                 }
                             } else {
                                 // Normal table output - use original target name if available
-                                output_handler.out_results(ports_map, "TCP".to_string());
+                                let ports_specified = self.config.ports_explicitly_specified;
+                                output_handler.out_results_with_ports_info(ports_map, "TCP".to_string(), ports_specified);
                             }
                         } else {
                             if json_output.is_none() {

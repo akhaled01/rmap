@@ -15,8 +15,8 @@ pub struct Args {
     pub target: Vec<String>,
 
     /// Ports or port ranges (e.g., 80,443,1-1024)
-    #[arg(short = 'p', long = "ports", default_value = "1-1024")]
-    pub ports: String,
+    #[arg(short = 'p', long = "ports")]
+    pub ports: Option<String>,
 
     /// Enable TCP scanning
     #[arg(long = "tcp", default_value = "true")]
