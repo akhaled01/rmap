@@ -73,14 +73,13 @@ impl OutputHandler {
     }
 
     pub fn out_results(&self, ports: HashMap<String, PortState>, protocol: String) {
-        self.out_results_with_ports_info(ports, protocol, false);
+        self.out_results_with_ports_info(ports, protocol);
     }
 
     pub fn out_results_with_ports_info(
         &self,
         ports: HashMap<String, PortState>,
         protocol: String,
-        ports_specified: bool,
     ) {
         if ports.is_empty() {
             println!("No ports found for {} scan", protocol.to_uppercase());

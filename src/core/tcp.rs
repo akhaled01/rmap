@@ -332,8 +332,7 @@ impl TCPScanner {
                                 }
                             } else {
                                 // Normal table output - use original target name if available
-                                let ports_specified = self.config.ports_explicitly_specified;
-                                output_handler.out_results_with_ports_info(ports_map, "TCP".to_string(), ports_specified);
+                                output_handler.out_results_with_ports_info(ports_map, "TCP".to_string());
                             }
                         } else {
                             if json_output.is_none() {

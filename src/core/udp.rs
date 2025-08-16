@@ -238,8 +238,7 @@ impl UDPScanner {
             }
             
             // Use the OutputHandler to display results
-            let ports_specified = self.config.ports_explicitly_specified;
-            output_handler.out_results_with_ports_info(ports_map, "UDP".to_string(), ports_specified);
+            output_handler.out_results_with_ports_info(ports_map, "UDP".to_string());
         }
         
         Ok(())
