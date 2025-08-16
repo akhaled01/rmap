@@ -1,0 +1,9 @@
+target:
+  - scanme.nmap.org
+ports: 22,80
+tcp: false
+udp: true
+timeout: 2000
+threads: 1
+lua_script: null
+verbose: true

@@ -1,6 +1,6 @@
 target:
-  - reboot01.com
-ports: 22,80,443,8080
+  - scanme.nmap.org
+ports: 22,80
 tcp: true
 udp: false
 timeout: 2000
